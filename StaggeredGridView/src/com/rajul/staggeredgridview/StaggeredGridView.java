@@ -19,10 +19,15 @@ package com.rajul.staggeredgridview;
 import java.util.ArrayList;
 import java.util.Arrays;
 
+
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.database.DataSetObserver;
 import android.graphics.Canvas;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.TransitionDrawable;
+import android.os.Handler;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.support.v4.util.SparseArrayCompat;
@@ -34,10 +39,12 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.MotionEvent;
+import android.view.SoundEffectConstants;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.accessibility.AccessibilityEvent;
 import android.widget.ListAdapter;
 
 /**
@@ -127,12 +134,18 @@ public class StaggeredGridView extends ViewGroup
     private final int mMaximumVelocity;
     private final int mFlingVelocity;
     private float mLastTouchY;
+    private float mLastTouchX;
     private float mTouchRemainderY;
     private int mActivePointerId;
+    private int mMotionPosition;
 
     private static final int TOUCH_MODE_IDLE = 0;
     private static final int TOUCH_MODE_DRAGGING = 1;
     private static final int TOUCH_MODE_FLINGING = 2;
+    private static final int TOUCH_MODE_DOWN = 3;
+	private static final int TOUCH_MODE_TAP = 4;
+	private static final int TOUCH_MODE_DONE_WAITING = 5;
+	private static final int TOUCH_MODE_REST = 6;
 
     private int mTouchMode;
     private final VelocityTracker mVelocityTracker = VelocityTracker.obtain();
@@ -141,6 +154,41 @@ public class StaggeredGridView extends ViewGroup
     private final EdgeEffectCompat mTopEdge;
     private final EdgeEffectCompat mBottomEdge;
     private OnScrollListener mOnScrollListener;
+    
+    /**
+     * The listener that receives notifications when an item is clicked.
+     */
+    OnItemClickListener mOnItemClickListener;
+    
+    private static final int INVALID_POSITION = -1;
+    
+    /**
+     * Defines the selector's location and dimension at drawing time
+     */
+    Rect mSelectorRect = new Rect();
+    
+    /**
+     * The current position of the selector in the list.
+     */
+    int mSelectorPosition = INVALID_POSITION;
+    
+    /**
+     * Acts upon click
+     */
+    private PerformClick mPerformClick;
+    
+    /**
+     * Delayed action for touch mode.
+     */
+    private Runnable mTouchModeReset;
+    
+    private Runnable mPendingCheckForTap;
+    
+    /**
+     * Rectangle used for hit testing children
+     */
+    private Rect mTouchFrame;
+    
 
     private static final class LayoutRecord
     {
@@ -390,14 +438,28 @@ public class StaggeredGridView extends ViewGroup
     {
         mVelocityTracker.addMovement(ev);
         final int action = ev.getAction() & MotionEventCompat.ACTION_MASK;
+        
+        int motionPosition = pointToPosition((int) ev.getX(), (int) ev.getY());
         switch (action)
         {
             case MotionEvent.ACTION_DOWN:
                 mVelocityTracker.clear();
                 mScroller.abortAnimation();
                 mLastTouchY = ev.getY();
+                mLastTouchX = ev.getX();
+                motionPosition = pointToPosition((int) mLastTouchX, (int) mLastTouchY);
                 mActivePointerId = MotionEventCompat.getPointerId(ev, 0);
                 mTouchRemainderY = 0;
+                if(mTouchMode != TOUCH_MODE_FLINGING && !mDataChanged && motionPosition >= 0 && getAdapter().isEnabled(motionPosition)){
+                	mTouchMode = TOUCH_MODE_DOWN;
+                	
+                	if (mPendingCheckForTap == null) {
+                    	mPendingCheckForTap = new CheckForTap();
+                    }
+                    
+                    postDelayed(mPendingCheckForTap, ViewConfiguration.getTapTimeout());
+                }
+                mMotionPosition = motionPosition;
                 break;
 
             case MotionEvent.ACTION_MOVE:
@@ -435,6 +497,13 @@ public class StaggeredGridView extends ViewGroup
 
             case MotionEvent.ACTION_CANCEL:
                 setTouchMode(TOUCH_MODE_IDLE);
+                mTouchMode = TOUCH_MODE_IDLE;
+                setPressed(false);
+                View motionView = this.getChildAt(mMotionPosition - mFirstPosition);
+                if (motionView != null) {
+                    motionView.setPressed(false);
+                }
+                
                 break;
 
             case MotionEvent.ACTION_UP:
@@ -442,8 +511,11 @@ public class StaggeredGridView extends ViewGroup
                 mVelocityTracker.computeCurrentVelocity(1000, mMaximumVelocity);
                 final float velocity = VelocityTrackerCompat.getYVelocity(mVelocityTracker,
                         mActivePointerId);
+                final int prevTouchMode = mTouchMode;
+                
                 if (Math.abs(velocity) > mFlingVelocity)
                 { // TODO
+                	mTouchMode = TOUCH_MODE_FLINGING;
                     setTouchMode(TOUCH_MODE_FLINGING);
                     mScroller.fling(0, 0, 0, (int) velocity, 0, 0, Integer.MIN_VALUE, Integer.MAX_VALUE);
                     mLastTouchY = 0;
@@ -451,8 +523,83 @@ public class StaggeredGridView extends ViewGroup
                 }
                 else
                 {
+                	mTouchMode = TOUCH_MODE_IDLE;
                     setTouchMode(TOUCH_MODE_IDLE);
                 }
+                
+                if (!mDataChanged && mAdapter.isEnabled(motionPosition)) {
+                    // TODO : handle
+                	mTouchMode = TOUCH_MODE_TAP;
+                } else {
+                    mTouchMode = TOUCH_MODE_REST;
+                    
+                }
+                
+                switch(prevTouchMode){
+            	case TOUCH_MODE_DOWN:
+            	case TOUCH_MODE_TAP:
+            	case TOUCH_MODE_DONE_WAITING:
+                    final View child = getChildAt(motionPosition - mFirstPosition);
+                    final float x = ev.getX();
+                    final boolean inList = x > getPaddingLeft() && x < getWidth() - getPaddingRight();
+                    if (child != null && !child.hasFocusable() && inList) {
+                    	if (mTouchMode != TOUCH_MODE_DOWN) {
+                            child.setPressed(false);
+                        }
+                    	
+                    	if (mPerformClick == null) {
+                    		
+                            mPerformClick = new PerformClick();
+                        }
+                    	
+                    	final PerformClick performClick = mPerformClick;
+                        performClick.mClickMotionPosition = motionPosition;
+                        performClick.rememberWindowAttachCount();
+                        
+                        
+                        if (mTouchMode == TOUCH_MODE_DOWN || mTouchMode == TOUCH_MODE_TAP) {
+                            final Handler handlerTouch = getHandler();
+                            if (handlerTouch != null) {
+                            	handlerTouch.removeCallbacks(mPendingCheckForTap );
+                            }
+                            
+                            if (!mDataChanged && mAdapter.isEnabled(motionPosition)) {
+                                mTouchMode = TOUCH_MODE_TAP;
+                                
+                                layoutChildren(mDataChanged);
+                                child.setPressed(true);
+                                
+                                setPressed(true);
+                                
+                                if (mTouchModeReset != null) {
+                                    removeCallbacks(mTouchModeReset);
+                                }
+                                mTouchModeReset = new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        mTouchMode = TOUCH_MODE_REST;
+                                        child.setPressed(false);
+                                        setPressed(false);
+                                        if (!mDataChanged) {
+                                            performClick.run();
+                                        }
+                                    }
+                                };
+                                postDelayed(mTouchModeReset, ViewConfiguration.getPressedStateDuration());
+                                
+                            } else {
+                                mTouchMode = TOUCH_MODE_REST;
+                               
+                            }
+                            return true;
+                        } else if (!mDataChanged && mAdapter.isEnabled(motionPosition)) {
+                            performClick.run();
+                        }
+                    }
+                    
+                    mTouchMode = TOUCH_MODE_REST;
+                    
+            }
 
             }
                 break;
@@ -2047,7 +2194,157 @@ public class StaggeredGridView extends ViewGroup
          */
         public void onScroll(ViewGroup view, int firstVisibleItem, int visibleItemCount, int totalItemCount);
     }
+    
+    /**
+     * A base class for Runnables that will check that their view is still attached to
+     * the original window as when the Runnable was created.
+     *
+     */
+    private class WindowRunnnable {
+        private int mOriginalAttachCount;
 
+        public void rememberWindowAttachCount() {
+            mOriginalAttachCount = getWindowAttachCount();
+        }
 
+        public boolean sameWindow() {
+            return hasWindowFocus() && getWindowAttachCount() == mOriginalAttachCount;
+        }
+    }  
+    
+    final class CheckForTap implements Runnable {
+        public void run() {
+            if (mTouchMode == TOUCH_MODE_DOWN) {
+            	
+                mTouchMode = TOUCH_MODE_TAP;
+                final View child = getChildAt(mMotionPosition - mFirstPosition);
+                if (child != null && !child.hasFocusable()) {
+                    
+                    if (!mDataChanged) {
+                    	child.setSelected(true);
+                    	child.setPressed(true);
+                        
+                        setPressed(true);
+                        layoutChildren(true);
+                        
+                        refreshDrawableState();
+
+                        final int longPressTimeout = ViewConfiguration.getLongPressTimeout();
+                        final boolean longClickable = isLongClickable();
+
+                       
+
+                       
+                        
+                        postInvalidate();
+                        
+                    } else {
+                        mTouchMode = TOUCH_MODE_DONE_WAITING;
+                    }
+                }
+            }
+        }
+    }
+    
+    
+    /**
+     * Register a callback to be invoked when an item in this AdapterView has
+     * been clicked.
+     *
+     * @param listener The callback that will be invoked.
+     */
+    public void setOnItemClickListener(OnItemClickListener listener) {
+        mOnItemClickListener = listener;
+    }
+
+    /**
+     * @return The callback to be invoked with an item in this AdapterView has
+     *         been clicked, or null id no callback has been set.
+     */
+    public final OnItemClickListener getOnItemClickListener() {
+        return mOnItemClickListener;
+    }
+    
+    public interface OnItemClickListener {
+
+        /**
+         * Callback method to be invoked when an item in this AdapterView has
+         * been clicked.
+         * <p>
+         * Implementers can call getItemAtPosition(position) if they need
+         * to access the data associated with the selected item.
+         *
+         * @param parent The AdapterView where the click happened.
+         * @param view The view within the AdapterView that was clicked (this
+         *            will be a view provided by the adapter)
+         * @param position The position of the view in the adapter.
+         * @param id The row id of the item that was clicked.
+         */
+        void onItemClick(StaggeredGridView parent, View view, int position, long id);
+    }
+
+    /**
+     * Maps a point to a position in the list.
+     *
+     * @param x X in local coordinate
+     * @param y Y in local coordinate
+     * @return The position of the item which contains the specified point, or
+     *         {@link #INVALID_POSITION} if the point does not intersect an item.
+     */
+    public int pointToPosition(int x, int y) {
+        Rect frame = mTouchFrame;
+        if (frame == null) {
+            mTouchFrame = new Rect();
+            frame = mTouchFrame;
+        }
+
+        final int count = getChildCount();
+        for (int i = count - 1; i >= 0; i--) {
+            final View child = getChildAt(i);
+            if (child.getVisibility() == View.VISIBLE) {
+                child.getHitRect(frame);
+                if (frame.contains(x, y)) {
+                    return mFirstPosition + i;
+                }
+            }
+        }
+        return INVALID_POSITION;
+    }
+    
+    private class PerformClick extends WindowRunnnable implements Runnable {
+        int mClickMotionPosition;
+
+        public void run() {
+            // The data has changed since we posted this action in the event queue,
+            // bail out before bad things happen
+            if (mDataChanged) return;
+
+            final ListAdapter adapter = mAdapter;
+            final int motionPosition = mClickMotionPosition;
+            if (adapter != null && mItemCount > 0 &&
+                    motionPosition != INVALID_POSITION &&
+                    motionPosition < adapter.getCount() && sameWindow()) {
+                final View view = getChildAt(motionPosition - mFirstPosition);
+                // If there is no view, something bad happened (the view scrolled off the
+                // screen, etc.) and we should cancel the click
+                if (view != null) {
+                    performItemClick(view, motionPosition, adapter.getItemId(motionPosition));
+                }
+            }
+        }
+    }
+    
+    public boolean performItemClick(View view, int position, long id) {
+        if (mOnItemClickListener != null) {
+            playSoundEffect(SoundEffectConstants.CLICK);
+            if (view != null) {
+                view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_CLICKED);
+            }
+            mOnItemClickListener.onItemClick(this, view, position, id);
+            return true;
+        }
+
+        return false;
+    }
 
 }

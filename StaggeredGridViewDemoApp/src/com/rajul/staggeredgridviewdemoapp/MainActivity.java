@@ -4,18 +4,21 @@ import java.util.ArrayList;
 import java.util.Random;
 
 import com.rajul.staggeredgridview.StaggeredGridView;
+import com.rajul.staggeredgridview.StaggeredGridView.OnItemClickListener;
 
 import android.os.Bundle;
 import android.app.Activity;
 import android.content.Context;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.TextView;
+import android.widget.Toast;
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements OnItemClickListener {
 	
 	StaggeredGridView gridView;
 	String content,temp;
@@ -31,6 +34,7 @@ public class MainActivity extends Activity {
 		gridView = (StaggeredGridView) findViewById(R.id.gridView1);
 		col_count = this.getResources().getInteger(R.integer.column_no);
 		gridView.setColumnCount(col_count);
+		gridView.setOnItemClickListener(this);
 		
 		content = "This is a test.";
 		rand = new Random();
@@ -114,6 +118,14 @@ public class MainActivity extends Activity {
 	class ViewHolder
 	{
 		public TextView content;
+	}
+
+
+	@Override
+	public void onItemClick(StaggeredGridView parent, View view, int position,
+			long id) {
+		Toast.makeText(MainActivity.this, "Clicked Position "+position, Toast.LENGTH_SHORT).show();
+		Log.d("Clicked","Clicked Position "+position+" Content "+contentList.get(position));
 	}
 	
 	
