@@ -1,0 +1,7 @@
+<resources>
+
+    <!-- Default item margins, per the Android Design guidelines. -->
+    
+    <dimen name="margin">8dp</dimen>
+
+</resources>
