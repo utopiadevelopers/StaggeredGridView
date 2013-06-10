@@ -2,7 +2,8 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#ffffff" >
+    android:background="@drawable/card_bg_r4"
+    android:padding="@dimen/cardpadding" >
 
     <TextView
         android:id="@+id/textViewTitle"
@@ -11,14 +12,24 @@
         android:layout_alignParentTop="true"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="5dp"
-        android:text="Large Text"
+        android:text="@string/item_title"
         android:textAppearance="?android:attr/textAppearanceLarge" />
+
+    <View
+        android:id="@+id/view"
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:layout_below="@+id/textViewTitle"
+        android:background="@color/dividing_line"
+        android:layout_marginTop="@dimen/view_margin_vertical"
+        android:layout_marginBottom="@dimen/view_margin_vertical" >
+    </View>
 
     <TextView
         android:id="@+id/textViewContent"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/textViewTitle"
+        android:layout_below="@+id/view"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="5dp"
         android:text="TextView" />

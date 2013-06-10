@@ -44,6 +44,7 @@ public class MainActivity extends Activity implements OnItemClickListener {
 		gridView.setColumnCount(col_count);
 		gridView.setOnItemClickListener(this);
 		
+		
 		content = "This is a test.";
 		rand = new Random();
 		contentList = (ArrayList<String>) getLastNonConfigurationInstance();
