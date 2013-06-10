@@ -43,6 +43,7 @@ public class MainActivity extends Activity implements OnItemClickListener {
 		col_count = this.getResources().getInteger(R.integer.column_no);
 		gridView.setColumnCount(col_count);
 		gridView.setOnItemClickListener(this);
+		gridView.setSelector(getResources().getDrawable(R.drawable.list_selector_holo_light));
 		
 		
 		content = "This is a test.";

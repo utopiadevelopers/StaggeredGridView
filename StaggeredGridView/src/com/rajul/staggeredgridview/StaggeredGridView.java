@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.database.DataSetObserver;
@@ -27,6 +28,7 @@ import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.TransitionDrawable;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -189,7 +191,38 @@ public class StaggeredGridView extends ViewGroup
      */
     private Rect mTouchFrame;
     
+    /**
+     * The drawable used to draw the selector
+     */
+    Drawable mSelector;
+    
+    boolean mDrawSelectorOnTop = true;
+    
+    /**
+     * The selection's left padding
+     */
+    int mSelectionLeftPadding = 0;
 
+    /**
+     * The selection's top padding
+     */
+    int mSelectionTopPadding = 0;
+
+    /**
+     * The selection's right padding
+     */
+    int mSelectionRightPadding = 0;
+
+    /**
+     * The selection's bottom padding
+     */
+    int mSelectionBottomPadding = 0;
+    
+    /**
+     * The select child's view (from the adapter's getView) is enabled.
+     */
+    private boolean mIsChildViewEnabled;
+    
     private static final class LayoutRecord
     {
         public int column;
@@ -279,6 +312,9 @@ public class StaggeredGridView extends ViewGroup
     public StaggeredGridView(Context context, AttributeSet attrs, int defStyle)
     {
         super(context, attrs, defStyle);
+        
+        //TODO
+        mDrawSelectorOnTop = true;
 
         final ViewConfiguration vc = ViewConfiguration.get(context);
         mTouchSlop = vc.getScaledTouchSlop();
@@ -290,6 +326,12 @@ public class StaggeredGridView extends ViewGroup
         mBottomEdge = new EdgeEffectCompat(context);
         setWillNotDraw(false);
         setClipToPadding(false);
+        
+        this.setFocusableInTouchMode(false);
+        
+        if (mSelector == null) {
+            useDefaultSelector();
+        }
     }
 
     /**
@@ -548,7 +590,8 @@ public class StaggeredGridView extends ViewGroup
                         }
                     	
                     	if (mPerformClick == null) {
-                    		
+                    		//TODO
+                    		invalidate();
                             mPerformClick = new PerformClick();
                         }
                     	
@@ -568,9 +611,14 @@ public class StaggeredGridView extends ViewGroup
                                 
                                 layoutChildren(mDataChanged);
                                 child.setPressed(true);
-                                
+                                positionSelector(mMotionPosition, child);
                                 setPressed(true);
-                                
+                                if (mSelector != null) {
+                                    Drawable d = mSelector.getCurrent();
+                                    if (d != null && d instanceof TransitionDrawable) {
+                                        ((TransitionDrawable) d).resetTransition();
+                                    }
+                                }
                                 if (mTouchModeReset != null) {
                                     removeCallbacks(mTouchModeReset);
                                 }
@@ -589,7 +637,7 @@ public class StaggeredGridView extends ViewGroup
                                 
                             } else {
                                 mTouchMode = TOUCH_MODE_REST;
-                               
+                                updateSelectorState();
                             }
                             return true;
                         } else if (!mDataChanged && mAdapter.isEnabled(motionPosition)) {
@@ -598,9 +646,9 @@ public class StaggeredGridView extends ViewGroup
                     }
                     
                     mTouchMode = TOUCH_MODE_REST;
-                    
+                    updateSelectorState();
             }
-
+                updateSelectorState();
             }
                 break;
         }
@@ -666,6 +714,15 @@ public class StaggeredGridView extends ViewGroup
         }
         
         invokeOnItemScrollListener();
+        //TODO
+        if (mSelectorPosition != INVALID_POSITION) {
+            final int childIndex = mSelectorPosition - mFirstPosition;
+            if (childIndex >= 0 && childIndex < getChildCount()) {
+                positionSelector(INVALID_POSITION, getChildAt(childIndex));
+            }
+        } else {
+            mSelectorRect.setEmpty();
+        }
         
         return deltaY == 0 || movedBy != 0;
     }
@@ -848,6 +905,28 @@ public class StaggeredGridView extends ViewGroup
                 }
                 setTouchMode(TOUCH_MODE_IDLE);
             }
+        }
+    }
+    
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        final boolean drawSelectorOnTop = mDrawSelectorOnTop;
+        if (!drawSelectorOnTop) {
+            drawSelector(canvas);
+        }
+
+        super.dispatchDraw(canvas);
+
+        if (drawSelectorOnTop) {
+            drawSelector(canvas);
+        }
+    }
+    
+    private void drawSelector(Canvas canvas) {
+    	if (!mSelectorRect.isEmpty() && mSelector != null) {
+            final Drawable selector = mSelector;
+            selector.setBounds(mSelectorRect);
+            selector.draw(canvas);
         }
     }
 
@@ -2345,6 +2424,162 @@ public class StaggeredGridView extends ViewGroup
         }
 
         return false;
+    }
+    
+    /**
+     * Returns the selector {@link android.graphics.drawable.Drawable} that is used to draw the
+     * selection in the list.
+     *
+     * @return the drawable used to display the selector
+     */
+    public Drawable getSelector() {
+        return mSelector;
+    }
+    
+    /**
+     * Set a Drawable that should be used to highlight the currently selected item.
+     *
+     * @param resID A Drawable resource to use as the selection highlight.
+     *
+     * @attr ref android.R.styleable#AbsListView_listSelector
+     */
+    public void setSelector(int resID) {
+        setSelector(getResources().getDrawable(resID));
+    }
+    
+    @Override
+    public boolean verifyDrawable(Drawable dr) {
+        return mSelector == dr || super.verifyDrawable(dr);
+    }
+
+    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
+	@Override
+    public void jumpDrawablesToCurrentState() {
+        super.jumpDrawablesToCurrentState();
+        if (mSelector != null) mSelector.jumpToCurrentState();
+    }
+    
+    public void setSelector(Drawable sel) {
+        if (mSelector != null) {
+            mSelector.setCallback(null);
+            unscheduleDrawable(mSelector);
+        }
+        
+        mSelector = sel;
+        
+        if(mSelector==null){
+        	return;
+        }
+         
+        Rect padding = new Rect();
+        sel.getPadding(padding);
+        mSelectionLeftPadding = padding.left;
+        mSelectionTopPadding = padding.top;
+        mSelectionRightPadding = padding.right;
+        mSelectionBottomPadding = padding.bottom;
+        sel.setCallback(this);
+        updateSelectorState();
+    }
+    
+    void updateSelectorState() {
+        if (mSelector != null) {
+            if (shouldShowSelector()) {
+                mSelector.setState(getDrawableState());
+            } else {
+                mSelector.setState(new int[] { 0 });
+            }
+        }
+    }
+    
+    @Override
+    protected void drawableStateChanged() {
+        super.drawableStateChanged();
+        updateSelectorState();
+    }
+    
+    /**
+     * Indicates whether this view is in a state where the selector should be drawn. This will
+     * happen if we have focus but are not in touch mode, or we are in the middle of displaying
+     * the pressed state for an item.
+     *
+     * @return True if the selector should be shown
+     */
+    boolean shouldShowSelector() {
+        return (hasFocus() && !isInTouchMode()) || touchModeDrawsInPressedState();
+    }
+    
+    /**
+     * @return True if the current touch mode requires that we draw the selector in the pressed
+     *         state.
+     */
+    boolean touchModeDrawsInPressedState() {
+        // FIXME use isPressed for this
+        switch (mTouchMode) {
+        case TOUCH_MODE_TAP:
+        case TOUCH_MODE_DONE_WAITING:
+            return true;
+        default:
+            return false;
+        }
+    }
+    
+    private void useDefaultSelector() {
+        setSelector(getResources().getDrawable(android.R.drawable.list_selector_background));
+    }
+    
+    private void positionSelector(int l, int t, int r, int b) {
+        mSelectorRect.set(l - mSelectionLeftPadding, t - mSelectionTopPadding, r
+                + mSelectionRightPadding, b + mSelectionBottomPadding);
+    }
+    
+    void positionSelector(int position, View sel) {
+        if (position != INVALID_POSITION) {
+            mSelectorPosition = position;
+        }
+
+        final Rect selectorRect = mSelectorRect;
+        selectorRect.set(sel.getLeft(), sel.getTop(), sel.getRight(), sel.getBottom());
+        if (sel instanceof SelectionBoundsAdjuster) {
+            ((SelectionBoundsAdjuster)sel).adjustListItemSelectionBounds(selectorRect);
+        }
+        
+        positionSelector(selectorRect.left, selectorRect.top, selectorRect.right,
+                selectorRect.bottom);
+
+        final boolean isChildViewEnabled = mIsChildViewEnabled;
+        if (sel.isEnabled() != isChildViewEnabled) {
+            mIsChildViewEnabled = !isChildViewEnabled;
+            if (getSelectedItemPosition() != INVALID_POSITION) {
+                refreshDrawableState();
+            }
+        }
+    }
+    
+	/**
+     * The top-level view of a list item can implement this interface to allow
+     * itself to modify the bounds of the selection shown for that item.
+     */
+    public interface SelectionBoundsAdjuster {
+        /**
+         * Called to allow the list item to adjust the bounds shown for
+         * its selection.
+         *
+         * @param bounds On call, this contains the bounds the list has
+         * selected for the item (that is the bounds of the entire view).  The
+         * values can be modified as desired.
+         */
+        public void adjustListItemSelectionBounds(Rect bounds);
+    }
+    
+    private int getSelectedItemPosition(){
+    	// TODO: setup mNextSelectedPosition
+    	return this.mSelectorPosition;
+    }
+    
+    void hideSelector() {
+        if (this.mSelectorPosition != INVALID_POSITION) {
+            // TODO: hide selector properly
+        }
     }
 
 }
