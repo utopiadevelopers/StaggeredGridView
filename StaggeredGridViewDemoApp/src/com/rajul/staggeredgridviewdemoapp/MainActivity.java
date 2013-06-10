@@ -28,9 +28,17 @@ public class MainActivity extends Activity implements OnItemClickListener {
 	ArrayList<String> contentList;
 
 	@Override
+	@Deprecated
+	public Object onRetainNonConfigurationInstance() {
+		
+		return contentList;
+	}
+
+	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
+		
 		gridView = (StaggeredGridView) findViewById(R.id.gridView1);
 		col_count = this.getResources().getInteger(R.integer.column_no);
 		gridView.setColumnCount(col_count);
@@ -38,17 +46,22 @@ public class MainActivity extends Activity implements OnItemClickListener {
 		
 		content = "This is a test.";
 		rand = new Random();
-		contentList = new ArrayList<String>();
-		for(int i=0;i<ITEM_COUNT;i++)
+		contentList = (ArrayList<String>) getLastNonConfigurationInstance();
+		if(contentList == null)
 		{
-			sizeOfCell = rand.nextInt(ITEM_SIZE_FACTOR)+1;
-			
-			//height = 200 + size * 20;
-			//Log.d("Position",position+"  "+size+ "  "+ height);
-			contentList.add(makeContent(content,sizeOfCell));
-			
+			Log.d("Creating", "Yes");
+			contentList = new ArrayList<String>();
+			for(int i=0;i<ITEM_COUNT;i++)
+			{
+				sizeOfCell = rand.nextInt(ITEM_SIZE_FACTOR)+1;
+				
+				//height = 200 + size * 20;
+				//Log.d("Position",position+"  "+size+ "  "+ height);
+				contentList.add(makeContent(content,sizeOfCell));
+				
+			}
 		}
-		
+				
 		MyListAdapter adapter =new MyListAdapter(this,R.layout.gridviewlayout);
 		int margin = getResources().getDimensionPixelSize(R.dimen.margin);
 
