@@ -5,6 +5,7 @@ import java.util.Random;
 
 import com.rajul.staggeredgridview.StaggeredGridView;
 import com.rajul.staggeredgridview.StaggeredGridView.OnItemClickListener;
+import com.rajul.staggeredgridview.StaggeredGridView.OnItemLongClickListener;
 
 import android.os.Bundle;
 import android.app.Activity;
@@ -18,12 +19,12 @@ import android.widget.ArrayAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 
-public class MainActivity extends Activity implements OnItemClickListener {
+public class MainActivity extends Activity implements OnItemClickListener, OnItemLongClickListener {
 	
 	StaggeredGridView gridView;
 	String content,temp;
 	Random rand;
-	int ITEM_COUNT = 5000,ITEM_SIZE_FACTOR=10;
+	int ITEM_COUNT = 21,ITEM_SIZE_FACTOR=10;
 	int sizeOfCell,col_count;
 	ArrayList<String> contentList;
 
@@ -43,6 +44,7 @@ public class MainActivity extends Activity implements OnItemClickListener {
 		col_count = this.getResources().getInteger(R.integer.column_no);
 		gridView.setColumnCount(col_count);
 		gridView.setOnItemClickListener(this);
+		gridView.setOnItemLongClickListener(this);
 		gridView.setSelector(getResources().getDrawable(R.drawable.list_selector_holo_light));
 		
 		
@@ -142,6 +144,13 @@ public class MainActivity extends Activity implements OnItemClickListener {
 		Toast.makeText(MainActivity.this, "Clicked Position "+position, Toast.LENGTH_SHORT).show();
 		Log.d("Clicked","Clicked Position "+position+" Content "+contentList.get(position));
 	}
+
+    @Override
+    public boolean onItemLongClick(StaggeredGridView parent, View view, int position, long id) {
+        Toast.makeText(MainActivity.this, "Long Clicked Position "+position, Toast.LENGTH_SHORT).show();
+        Log.d("Long Clicked","Clicked Position "+position+" Content "+contentList.get(position));
+        return true;
+    }
 	
 	
 

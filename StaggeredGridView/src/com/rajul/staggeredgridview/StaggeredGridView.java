@@ -19,7 +19,6 @@ package com.rajul.staggeredgridview;
 import java.util.ArrayList;
 import java.util.Arrays;
 
-
 import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.res.TypedArray;
@@ -40,25 +39,26 @@ import android.support.v4.widget.EdgeEffectCompat;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.util.SparseArray;
+import android.view.ContextMenu;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.SoundEffectConstants;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.ContextMenu.ContextMenuInfo;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.ListAdapter;
 
 /**
  * ListView and GridView just not complex enough? Try StaggeredGridView!
- * 
  * <p>
  * StaggeredGridView presents a multi-column grid with consistent column sizes
  * but varying row sizes between the columns. Each successive item from a
  * {@link android.widget.ListAdapter ListAdapter} will be arranged from top to
  * bottom, left to right. The largest vertical gap is always filled first.
  * </p>
- * 
  * <p>
  * Item views may span multiple columns as specified by their
  * {@link LayoutParams}. The attribute <code>android:layout_span</code> may be
@@ -72,35 +72,28 @@ public class StaggeredGridView extends ViewGroup
 
     /**
      * There are a few things you should know if you're going to make
-     * modifications to StaggeredGridView.
-     * 
-     * Like ListView, SGV populates from an adapter and recycles views that fall
-     * out of the visible boundaries of the grid. A few invariants always hold:
-     * 
-     * - mFirstPosition is the adapter position of the View returned by
-     * getChildAt(0). <br />
+     * modifications to StaggeredGridView. Like ListView, SGV populates from an
+     * adapter and recycles views that fall out of the visible boundaries of the
+     * grid. A few invariants always hold: - mFirstPosition is the adapter
+     * position of the View returned by getChildAt(0). <br />
      * - Any child index can be translated to an adapter position by adding
      * mFirstPosition. <br />
      * - Any adapter position can be translated to a child index by subtracting
      * mFirstPosition.<br />
      * - Views for items in the range [mFirstPosition, mFirstPosition +
      * getChildCount()) are currently attached to the grid as children. All
-     * other adapter positions do not have active views.
-     * 
-     * This means a few things thanks to the staggered grid's nature. Some views
-     * may stay attached long after they have scrolled offscreen if removing and
-     * recycling them would result in breaking one of the invariants above.
-     * 
-     * LayoutRecords are used to track data about a particular item's layout
-     * after the associated view has been removed. These let positioning and the
-     * choice of column for an item remain consistent even though the rules for
-     * filling content up vs. filling down vary.
-     * 
-     * Whenever layout parameters for a known LayoutRecord change, other
-     * LayoutRecords before or after it may need to be invalidated. e.g. if the
-     * item's height or the number of columns it spans changes, all bets for
-     * other items in the same direction are off since the cached information no
-     * longer applies.
+     * other adapter positions do not have active views. This means a few things
+     * thanks to the staggered grid's nature. Some views may stay attached long
+     * after they have scrolled offscreen if removing and recycling them would
+     * result in breaking one of the invariants above. LayoutRecords are used to
+     * track data about a particular item's layout after the associated view has
+     * been removed. These let positioning and the choice of column for an item
+     * remain consistent even though the rules for filling content up vs.
+     * filling down vary. Whenever layout parameters for a known LayoutRecord
+     * change, other LayoutRecords before or after it may need to be
+     * invalidated. e.g. if the item's height or the number of columns it spans
+     * changes, all bets for other items in the same direction are off since the
+     * cached information no longer applies.
      */
 
     private ListAdapter mAdapter;
@@ -145,9 +138,9 @@ public class StaggeredGridView extends ViewGroup
     private static final int TOUCH_MODE_DRAGGING = 1;
     private static final int TOUCH_MODE_FLINGING = 2;
     private static final int TOUCH_MODE_DOWN = 3;
-	private static final int TOUCH_MODE_TAP = 4;
-	private static final int TOUCH_MODE_DONE_WAITING = 5;
-	private static final int TOUCH_MODE_REST = 6;
+    private static final int TOUCH_MODE_TAP = 4;
+    private static final int TOUCH_MODE_DONE_WAITING = 5;
+    private static final int TOUCH_MODE_REST = 6;
 
     private int mTouchMode;
     private final VelocityTracker mVelocityTracker = VelocityTracker.obtain();
@@ -156,48 +149,60 @@ public class StaggeredGridView extends ViewGroup
     private final EdgeEffectCompat mTopEdge;
     private final EdgeEffectCompat mBottomEdge;
     private OnScrollListener mOnScrollListener;
-    
+
     /**
      * The listener that receives notifications when an item is clicked.
      */
     OnItemClickListener mOnItemClickListener;
-    
+
+    /**
+     * The listener that receives notifications when an item is long clicked.
+     */
+    OnItemLongClickListener mOnItemLongClickListener;
+
+    /**
+     * The last CheckForLongPress runnable we posted, if any
+     */
+    private CheckForLongPress mPendingCheckForLongPress;
+
+    private ContextMenuInfo mContextMenuInfo = null;
+
     private static final int INVALID_POSITION = -1;
-    
+
     /**
      * Defines the selector's location and dimension at drawing time
      */
     Rect mSelectorRect = new Rect();
-    
+
     /**
      * The current position of the selector in the list.
      */
     int mSelectorPosition = INVALID_POSITION;
-    
+
     /**
      * Acts upon click
      */
     private PerformClick mPerformClick;
-    
+
     /**
      * Delayed action for touch mode.
      */
     private Runnable mTouchModeReset;
-    
+
     private Runnable mPendingCheckForTap;
-    
+
     /**
      * Rectangle used for hit testing children
      */
     private Rect mTouchFrame;
-    
+
     /**
      * The drawable used to draw the selector
      */
     Drawable mSelector;
-    
+
     boolean mDrawSelectorOnTop = true;
-    
+
     /**
      * The selection's left padding
      */
@@ -217,12 +222,12 @@ public class StaggeredGridView extends ViewGroup
      * The selection's bottom padding
      */
     int mSelectionBottomPadding = 0;
-    
+
     /**
      * The select child's view (from the adapter's getView) is enabled.
      */
     private boolean mIsChildViewEnabled;
-    
+
     private static final class LayoutRecord
     {
         public int column;
@@ -312,8 +317,8 @@ public class StaggeredGridView extends ViewGroup
     public StaggeredGridView(Context context, AttributeSet attrs, int defStyle)
     {
         super(context, attrs, defStyle);
-        
-        //TODO
+
+        // TODO
         mDrawSelectorOnTop = true;
 
         final ViewConfiguration vc = ViewConfiguration.get(context);
@@ -326,9 +331,9 @@ public class StaggeredGridView extends ViewGroup
         mBottomEdge = new EdgeEffectCompat(context);
         setWillNotDraw(false);
         setClipToPadding(false);
-        
+
         this.setFocusableInTouchMode(false);
-        
+
         if (mSelector == null) {
             useDefaultSelector();
         }
@@ -340,8 +345,7 @@ public class StaggeredGridView extends ViewGroup
      * default is 2. (If it were 1, perhaps you should be using a
      * {@link android.widget.ListView ListView}.)
      * 
-     * @param colCount
-     *            Number of columns to display.
+     * @param colCount Number of columns to display.
      * @see #setMinColumnWidth(int)
      */
     public void setColumnCount(int colCount)
@@ -379,8 +383,7 @@ public class StaggeredGridView extends ViewGroup
      * Set the margin between items in pixels. This margin is applied both
      * vertically and horizontally.
      * 
-     * @param marginPixels
-     *            Spacing between items in pixels
+     * @param marginPixels Spacing between items in pixels
      */
     public void setItemMargin(int marginPixels)
     {
@@ -402,7 +405,7 @@ public class StaggeredGridView extends ViewGroup
     {
         return mFirstPosition;
     }
-    
+
     /**
      * @return the total number of items in the grid displayed or not
      */
@@ -429,13 +432,12 @@ public class StaggeredGridView extends ViewGroup
                     // Catch!
                     // Stopped a fling. It is a scroll.
                     setTouchMode(TOUCH_MODE_DRAGGING);
-                    
+
                     return true;
                 }
                 break;
 
-            case MotionEvent.ACTION_MOVE:
-            {
+            case MotionEvent.ACTION_MOVE: {
                 final int index = MotionEventCompat.findPointerIndex(ev, mActivePointerId);
                 if (index < 0)
                 {
@@ -459,20 +461,20 @@ public class StaggeredGridView extends ViewGroup
 
         return false;
     }
-    
-    public void setTouchMode(int newState){
-//    	mTouchMode = newState;
-    	switch (newState) {
-		case TOUCH_MODE_DRAGGING:
-			reportScrollStateChange(OnScrollListener.SCROLL_STATE_TOUCH_SCROLL);
-			break;
-		case TOUCH_MODE_FLINGING:
-			reportScrollStateChange(OnScrollListener.SCROLL_STATE_FLING);
-			break;
-		case TOUCH_MODE_IDLE:
-			reportScrollStateChange(OnScrollListener.SCROLL_STATE_IDLE);
-			break;
-		}
+
+    public void setTouchMode(int newState) {
+        // mTouchMode = newState;
+        switch (newState) {
+            case TOUCH_MODE_DRAGGING:
+                reportScrollStateChange(OnScrollListener.SCROLL_STATE_TOUCH_SCROLL);
+                break;
+            case TOUCH_MODE_FLINGING:
+                reportScrollStateChange(OnScrollListener.SCROLL_STATE_FLING);
+                break;
+            case TOUCH_MODE_IDLE:
+                reportScrollStateChange(OnScrollListener.SCROLL_STATE_IDLE);
+                break;
+        }
     }
 
     @Override
@@ -480,7 +482,7 @@ public class StaggeredGridView extends ViewGroup
     {
         mVelocityTracker.addMovement(ev);
         final int action = ev.getAction() & MotionEventCompat.ACTION_MASK;
-        
+
         int motionPosition = pointToPosition((int) ev.getX(), (int) ev.getY());
         switch (action)
         {
@@ -492,20 +494,21 @@ public class StaggeredGridView extends ViewGroup
                 motionPosition = pointToPosition((int) mLastTouchX, (int) mLastTouchY);
                 mActivePointerId = MotionEventCompat.getPointerId(ev, 0);
                 mTouchRemainderY = 0;
-                if(mTouchMode != TOUCH_MODE_FLINGING && !mDataChanged && motionPosition >= 0 && getAdapter().isEnabled(motionPosition)){
-                	mTouchMode = TOUCH_MODE_DOWN;
-                	
-                	if (mPendingCheckForTap == null) {
-                    	mPendingCheckForTap = new CheckForTap();
+                if (mTouchMode != TOUCH_MODE_FLINGING && !mDataChanged && motionPosition >= 0
+                        && getAdapter().isEnabled(motionPosition)) {
+                    mTouchMode = TOUCH_MODE_DOWN;
+
+                    if (mPendingCheckForTap == null) {
+                        mPendingCheckForTap = new CheckForTap();
                     }
-                    
+
                     postDelayed(mPendingCheckForTap, ViewConfiguration.getTapTimeout());
                 }
                 mMotionPosition = motionPosition;
+                ViewCompat.postInvalidateOnAnimation(this);
                 break;
 
-            case MotionEvent.ACTION_MOVE:
-            {
+            case MotionEvent.ACTION_MOVE: {
                 final int index = MotionEventCompat.findPointerIndex(ev, mActivePointerId);
                 if (index < 0)
                 {
@@ -545,109 +548,121 @@ public class StaggeredGridView extends ViewGroup
                 if (motionView != null) {
                     motionView.setPressed(false);
                 }
-                
+
+                final Handler handler = getHandler();
+                if (handler != null) {
+                    handler.removeCallbacks(mPendingCheckForLongPress);
+                }
+
+                if (mTopEdge != null) {
+                    mTopEdge.onRelease();
+                    mBottomEdge.onRelease();
+                }
+
                 break;
 
-            case MotionEvent.ACTION_UP:
-            {
+            case MotionEvent.ACTION_UP: {
                 mVelocityTracker.computeCurrentVelocity(1000, mMaximumVelocity);
                 final float velocity = VelocityTrackerCompat.getYVelocity(mVelocityTracker,
                         mActivePointerId);
                 final int prevTouchMode = mTouchMode;
-                
+
                 if (Math.abs(velocity) > mFlingVelocity)
                 { // TODO
-                	mTouchMode = TOUCH_MODE_FLINGING;
+                    mTouchMode = TOUCH_MODE_FLINGING;
                     setTouchMode(TOUCH_MODE_FLINGING);
-                    mScroller.fling(0, 0, 0, (int) velocity, 0, 0, Integer.MIN_VALUE, Integer.MAX_VALUE);
+                    mScroller.fling(0, 0, 0, (int) velocity, 0, 0, Integer.MIN_VALUE,
+                            Integer.MAX_VALUE);
                     mLastTouchY = 0;
                     ViewCompat.postInvalidateOnAnimation(this);
                 }
                 else
                 {
-                	mTouchMode = TOUCH_MODE_IDLE;
+                    mTouchMode = TOUCH_MODE_IDLE;
                     setTouchMode(TOUCH_MODE_IDLE);
                 }
-                
+
                 if (!mDataChanged && mAdapter.isEnabled(motionPosition)) {
                     // TODO : handle
-                	mTouchMode = TOUCH_MODE_TAP;
+                    mTouchMode = TOUCH_MODE_TAP;
                 } else {
                     mTouchMode = TOUCH_MODE_REST;
-                    
+                    updateSelectorState();
                 }
-                
-                switch(prevTouchMode){
-            	case TOUCH_MODE_DOWN:
-            	case TOUCH_MODE_TAP:
-            	case TOUCH_MODE_DONE_WAITING:
-                    final View child = getChildAt(motionPosition - mFirstPosition);
-                    final float x = ev.getX();
-                    final boolean inList = x > getPaddingLeft() && x < getWidth() - getPaddingRight();
-                    if (child != null && !child.hasFocusable() && inList) {
-                    	if (mTouchMode != TOUCH_MODE_DOWN) {
-                            child.setPressed(false);
-                        }
-                    	
-                    	if (mPerformClick == null) {
-                    		//TODO
-                    		invalidate();
-                            mPerformClick = new PerformClick();
-                        }
-                    	
-                    	final PerformClick performClick = mPerformClick;
-                        performClick.mClickMotionPosition = motionPosition;
-                        performClick.rememberWindowAttachCount();
-                        
-                        
-                        if (mTouchMode == TOUCH_MODE_DOWN || mTouchMode == TOUCH_MODE_TAP) {
-                            final Handler handlerTouch = getHandler();
-                            if (handlerTouch != null) {
-                            	handlerTouch.removeCallbacks(mPendingCheckForTap );
+
+                switch (prevTouchMode) {
+                    case TOUCH_MODE_DOWN:
+                    case TOUCH_MODE_TAP:
+                    case TOUCH_MODE_DONE_WAITING:
+                        final View child = getChildAt(motionPosition - mFirstPosition);
+                        final float x = ev.getX();
+                        final boolean inList = x > getPaddingLeft()
+                                && x < getWidth() - getPaddingRight();
+                        if (child != null && !child.hasFocusable() && inList) {
+                            if (mTouchMode != TOUCH_MODE_DOWN) {
+                                child.setPressed(false);
                             }
-                            
-                            if (!mDataChanged && mAdapter.isEnabled(motionPosition)) {
-                                mTouchMode = TOUCH_MODE_TAP;
-                                
-                                layoutChildren(mDataChanged);
-                                child.setPressed(true);
-                                positionSelector(mMotionPosition, child);
-                                setPressed(true);
-                                if (mSelector != null) {
-                                    Drawable d = mSelector.getCurrent();
-                                    if (d != null && d instanceof TransitionDrawable) {
-                                        ((TransitionDrawable) d).resetTransition();
-                                    }
+
+                            if (mPerformClick == null) {
+                                // TODO
+                                ViewCompat.postInvalidateOnAnimation(this);
+                                mPerformClick = new PerformClick();
+                            }
+
+                            final PerformClick performClick = mPerformClick;
+                            performClick.mClickMotionPosition = motionPosition;
+                            performClick.rememberWindowAttachCount();
+
+                            if (mTouchMode == TOUCH_MODE_DOWN || mTouchMode == TOUCH_MODE_TAP) {
+                                final Handler handlerTouch = getHandler();
+                                if (handlerTouch != null) {
+                                    handlerTouch.removeCallbacks(mTouchMode == TOUCH_MODE_DOWN ?
+                                            mPendingCheckForTap : mPendingCheckForLongPress);
                                 }
-                                if (mTouchModeReset != null) {
-                                    removeCallbacks(mTouchModeReset);
-                                }
-                                mTouchModeReset = new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        mTouchMode = TOUCH_MODE_REST;
-                                        child.setPressed(false);
-                                        setPressed(false);
-                                        if (!mDataChanged) {
-                                            performClick.run();
+
+                                if (!mDataChanged && mAdapter.isEnabled(motionPosition)) {
+                                    mTouchMode = TOUCH_MODE_TAP;
+
+                                    layoutChildren(mDataChanged);
+                                    child.setPressed(true);
+                                    positionSelector(mMotionPosition, child);
+                                    setPressed(true);
+                                    if (mSelector != null) {
+                                        Drawable d = mSelector.getCurrent();
+                                        if (d != null && d instanceof TransitionDrawable) {
+                                            ((TransitionDrawable) d).resetTransition();
                                         }
                                     }
-                                };
-                                postDelayed(mTouchModeReset, ViewConfiguration.getPressedStateDuration());
-                                
-                            } else {
-                                mTouchMode = TOUCH_MODE_REST;
-                                updateSelectorState();
+                                    if (mTouchModeReset != null) {
+                                        removeCallbacks(mTouchModeReset);
+                                    }
+                                    mTouchModeReset = new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            mTouchMode = TOUCH_MODE_REST;
+                                            child.setPressed(false);
+                                            setPressed(false);
+                                            if (!mDataChanged) {
+                                                performClick.run();
+                                            }
+                                        }
+                                    };
+                                    postDelayed(mTouchModeReset,
+                                            ViewConfiguration.getPressedStateDuration());
+
+                                } else {
+                                    mTouchMode = TOUCH_MODE_REST;
+                                    updateSelectorState();
+                                }
+                                return true;
+                            } else if (!mDataChanged && mAdapter.isEnabled(motionPosition)) {
+                                performClick.run();
                             }
-                            return true;
-                        } else if (!mDataChanged && mAdapter.isEnabled(motionPosition)) {
-                            performClick.run();
                         }
-                    }
-                    
-                    mTouchMode = TOUCH_MODE_REST;
-                    updateSelectorState();
-            }
+
+                        mTouchMode = TOUCH_MODE_REST;
+                        updateSelectorState();
+                }
                 updateSelectorState();
             }
                 break;
@@ -656,9 +671,7 @@ public class StaggeredGridView extends ViewGroup
     }
 
     /**
-     * 
-     * @param deltaY
-     *            Pixels that content should move by
+     * @param deltaY Pixels that content should move by
      * @return true if the movement completed, false if it was stopped
      *         prematurely.
      */
@@ -712,9 +725,9 @@ public class StaggeredGridView extends ViewGroup
                 }
             }
         }
-        
+
         invokeOnItemScrollListener();
-        //TODO
+        // TODO
         if (mSelectorPosition != INVALID_POSITION) {
             final int childIndex = mSelectorPosition - mFirstPosition;
             if (childIndex >= 0 && childIndex < getChildCount()) {
@@ -723,7 +736,7 @@ public class StaggeredGridView extends ViewGroup
         } else {
             mSelectorRect.setEmpty();
         }
-        
+
         return deltaY == 0 || movedBy != 0;
     }
 
@@ -879,7 +892,7 @@ public class StaggeredGridView extends ViewGroup
 
             if (!stopped && !mScroller.isFinished())
             {
-            	invokeOnItemScrollListener();
+                invokeOnItemScrollListener();
                 ViewCompat.postInvalidateOnAnimation(this);
             }
             else
@@ -907,7 +920,7 @@ public class StaggeredGridView extends ViewGroup
             }
         }
     }
-    
+
     @Override
     protected void dispatchDraw(Canvas canvas) {
         final boolean drawSelectorOnTop = mDrawSelectorOnTop;
@@ -921,9 +934,9 @@ public class StaggeredGridView extends ViewGroup
             drawSelector(canvas);
         }
     }
-    
+
     private void drawSelector(Canvas canvas) {
-    	if (!mSelectorRect.isEmpty() && mSelector != null) {
+        if (!mSelectorRect.isEmpty() && mSelector != null) {
             final Drawable selector = mSelector;
             selector.setBounds(mSelectorRect);
             selector.draw(canvas);
@@ -1137,8 +1150,7 @@ public class StaggeredGridView extends ViewGroup
     /**
      * Measure and layout all currently visible children.
      * 
-     * @param queryAdapter
-     *            true to requery the adapter for view data
+     * @param queryAdapter true to requery the adapter for view data
      */
     final void layoutChildren(boolean queryAdapter)
     {
@@ -1299,10 +1311,9 @@ public class StaggeredGridView extends ViewGroup
     /**
      * Should be called with mPopulating set to true
      * 
-     * @param fromPosition
-     *            Position to start filling from
-     * @param overhang
-     *            the number of extra pixels to fill beyond the current top edge
+     * @param fromPosition Position to start filling from
+     * @param overhang the number of extra pixels to fill beyond the current top
+     *            edge
      * @return the max overhang beyond the beginning of the view of any added
      *         items at the top
      */
@@ -1444,11 +1455,9 @@ public class StaggeredGridView extends ViewGroup
     /**
      * Should be called with mPopulating set to true
      * 
-     * @param fromPosition
-     *            Position to start filling from
-     * @param overhang
-     *            the number of extra pixels to fill beyond the current bottom
-     *            edge
+     * @param fromPosition Position to start filling from
+     * @param overhang the number of extra pixels to fill beyond the current
+     *            bottom edge
      * @return the max overhang beyond the end of the view of any added items at
      *         the bottom
      */
@@ -1734,10 +1743,8 @@ public class StaggeredGridView extends ViewGroup
      * Obtain a populated view from the adapter. If optScrap is non-null and is
      * not reused it will be placed in the recycle bin.
      * 
-     * @param position
-     *            position to get view for
-     * @param optScrap
-     *            Optional scrap view; will be reused if possible
+     * @param position position to get view for
+     * @param optScrap Optional scrap view; will be reused if possible
      * @return A new view, a recycled view from mRecycler, or optScrap
      */
     final View obtainView(int position, View optScrap)
@@ -1927,7 +1934,9 @@ public class StaggeredGridView extends ViewGroup
 
     public static class LayoutParams extends ViewGroup.LayoutParams
     {
-        private static final int[] LAYOUT_ATTRS = new int[] { android.R.attr.layout_span };
+        private static final int[] LAYOUT_ATTRS = new int[] {
+            android.R.attr.layout_span
+        };
 
         private static final int SPAN_INDEX = 0;
 
@@ -2204,80 +2213,85 @@ public class StaggeredGridView extends ViewGroup
         };
     }
 
-	public void setOnScrollListener(OnScrollListener scrollListener) {
-		mOnScrollListener = scrollListener;
-		invokeOnItemScrollListener();
-	}
-	
-	void reportScrollStateChange(int newState) {
-		if (newState != mTouchMode) {
-			mTouchMode = newState;
-			if (mOnScrollListener != null) {
-				mOnScrollListener.onScrollStateChanged(this, newState);
-			}
-		}
-	}
-	
-	void invokeOnItemScrollListener() {
+    public void setOnScrollListener(OnScrollListener scrollListener) {
+        mOnScrollListener = scrollListener;
+        invokeOnItemScrollListener();
+    }
 
-		if (mOnScrollListener != null) {
-			mOnScrollListener.onScroll(this, mFirstPosition, getChildCount(), mItemCount);
-		}
+    void reportScrollStateChange(int newState) {
+        if (newState != mTouchMode) {
+            mTouchMode = newState;
+            if (mOnScrollListener != null) {
+                mOnScrollListener.onScrollStateChanged(this, newState);
+            }
+        }
+    }
 
-	}
-	
-	 /**
+    void invokeOnItemScrollListener() {
+
+        if (mOnScrollListener != null) {
+            mOnScrollListener.onScroll(this, mFirstPosition, getChildCount(), mItemCount);
+        }
+
+    }
+
+    /**
      * Interface definition for a callback to be invoked when the list or grid
      * has been scrolled.
      */
     public interface OnScrollListener {
 
         /**
-         * The view is not scrolling. Note navigating the list using the trackball counts as
-         * being in the idle state since these transitions are not animated.
+         * The view is not scrolling. Note navigating the list using the
+         * trackball counts as being in the idle state since these transitions
+         * are not animated.
          */
         public static int SCROLL_STATE_IDLE = 0;
 
         /**
-         * The user is scrolling using touch, and their finger is still on the screen
+         * The user is scrolling using touch, and their finger is still on the
+         * screen
          */
         public static int SCROLL_STATE_TOUCH_SCROLL = 1;
 
         /**
-         * The user had previously been scrolling using touch and had performed a fling. The
-         * animation is now coasting to a stop
+         * The user had previously been scrolling using touch and had performed
+         * a fling. The animation is now coasting to a stop
          */
         public static int SCROLL_STATE_FLING = 2;
 
         /**
-         * Callback method to be invoked while the list view or grid view is being scrolled. If the
-         * view is being scrolled, this method will be called before the next frame of the scroll is
-         * rendered. In particular, it will be called before any calls to
+         * Callback method to be invoked while the list view or grid view is
+         * being scrolled. If the view is being scrolled, this method will be
+         * called before the next frame of the scroll is rendered. In
+         * particular, it will be called before any calls to
          * {@link Adapter#getView(int, View, ViewGroup)}.
-         *
+         * 
          * @param view The view whose scroll state is being reported
-         *
-         * @param scrollState The current scroll state. One of {@link #SCROLL_STATE_IDLE},
-         * {@link #SCROLL_STATE_TOUCH_SCROLL} or {@link #SCROLL_STATE_IDLE}.
+         * @param scrollState The current scroll state. One of
+         *            {@link #SCROLL_STATE_IDLE},
+         *            {@link #SCROLL_STATE_TOUCH_SCROLL} or
+         *            {@link #SCROLL_STATE_IDLE}.
          */
         public void onScrollStateChanged(ViewGroup view, int scrollState);
 
         /**
-         * Callback method to be invoked when the list or grid has been scrolled. This will be
-         * called after the scroll has completed
+         * Callback method to be invoked when the list or grid has been
+         * scrolled. This will be called after the scroll has completed
+         * 
          * @param view The view whose scroll state is being reported
-         * @param firstVisibleItem the index of the first visible cell (ignore if
-         *        visibleItemCount == 0)
+         * @param firstVisibleItem the index of the first visible cell (ignore
+         *            if visibleItemCount == 0)
          * @param visibleItemCount the number of visible cells
          * @param totalItemCount the number of items in the list adaptor
          */
-        public void onScroll(ViewGroup view, int firstVisibleItem, int visibleItemCount, int totalItemCount);
+        public void onScroll(ViewGroup view, int firstVisibleItem, int visibleItemCount,
+                int totalItemCount);
     }
-    
+
     /**
-     * A base class for Runnables that will check that their view is still attached to
-     * the original window as when the Runnable was created.
-     *
+     * A base class for Runnables that will check that their view is still
+     * attached to the original window as when the Runnable was created.
      */
     private class WindowRunnnable {
         private int mOriginalAttachCount;
@@ -2289,34 +2303,51 @@ public class StaggeredGridView extends ViewGroup
         public boolean sameWindow() {
             return hasWindowFocus() && getWindowAttachCount() == mOriginalAttachCount;
         }
-    }  
-    
+    }
+
     final class CheckForTap implements Runnable {
         public void run() {
             if (mTouchMode == TOUCH_MODE_DOWN) {
-            	
+
                 mTouchMode = TOUCH_MODE_TAP;
                 final View child = getChildAt(mMotionPosition - mFirstPosition);
                 if (child != null && !child.hasFocusable()) {
-                    
+
                     if (!mDataChanged) {
-                    	child.setSelected(true);
-                    	child.setPressed(true);
-                        
+                        child.setSelected(true);
+                        child.setPressed(true);
+
                         setPressed(true);
                         layoutChildren(true);
-                        
+
                         refreshDrawableState();
 
                         final int longPressTimeout = ViewConfiguration.getLongPressTimeout();
                         final boolean longClickable = isLongClickable();
 
-                       
+                        if (mSelector != null) {
+                            Drawable d = mSelector.getCurrent();
+                            if (d instanceof TransitionDrawable) {
+                                if (longClickable) {
+                                    ((TransitionDrawable) d).startTransition(longPressTimeout);
+                                } else {
+                                    ((TransitionDrawable) d).resetTransition();
+                                }
+                            }
+                        }
 
-                       
-                        
+                        if (longClickable) {
+                            if (mPendingCheckForLongPress == null) {
+                                mPendingCheckForLongPress = new CheckForLongPress();
+                            }
+                            mPendingCheckForLongPress.rememberWindowAttachCount();
+                            postDelayed(mPendingCheckForLongPress, longPressTimeout);
+                        } else {
+                            mTouchMode = TOUCH_MODE_DONE_WAITING;
+                        }
+
                         postInvalidate();
-                        
+
                     } else {
                         mTouchMode = TOUCH_MODE_DONE_WAITING;
                     }
@@ -2324,12 +2355,11 @@ public class StaggeredGridView extends ViewGroup
             }
         }
     }
-    
-    
+
     /**
      * Register a callback to be invoked when an item in this AdapterView has
      * been clicked.
-     *
+     * 
      * @param listener The callback that will be invoked.
      */
     public void setOnItemClickListener(OnItemClickListener listener) {
@@ -2343,16 +2373,16 @@ public class StaggeredGridView extends ViewGroup
     public final OnItemClickListener getOnItemClickListener() {
         return mOnItemClickListener;
     }
-    
+
     public interface OnItemClickListener {
 
         /**
          * Callback method to be invoked when an item in this AdapterView has
          * been clicked.
          * <p>
-         * Implementers can call getItemAtPosition(position) if they need
-         * to access the data associated with the selected item.
-         *
+         * Implementers can call getItemAtPosition(position) if they need to
+         * access the data associated with the selected item.
+         * 
          * @param parent The AdapterView where the click happened.
          * @param view The view within the AdapterView that was clicked (this
          *            will be a view provided by the adapter)
@@ -2363,12 +2393,49 @@ public class StaggeredGridView extends ViewGroup
     }
 
     /**
+     * Register a callback to be invoked when an item in this AdapterView has
+     * been clicked and held
+     * 
+     * @param listener The callback that will run
+     */
+    public void setOnItemLongClickListener(OnItemLongClickListener listener) {
+        if (!isLongClickable()) {
+            setLongClickable(true);
+        }
+        mOnItemLongClickListener = listener;
+    }
+
+    /**
+     * @return The callback to be invoked with an item in this AdapterView has
+     *         been clicked and held, or null id no callback as been set.
+     */
+    public final OnItemLongClickListener getOnItemLongClickListener() {
+        return mOnItemLongClickListener;
+    }
+
+    public interface OnItemLongClickListener {
+        /**
+         * Callback method to be invoked when an item in this view has been
+         * clicked and held. Implementers can call getItemAtPosition(position)
+         * if they need to access the data associated with the selected item.
+         * 
+         * @param parent The AbsListView where the click happened
+         * @param view The view within the AbsListView that was clicked
+         * @param position The position of the view in the list
+         * @param id The row id of the item that was clicked
+         * @return true if the callback consumed the long click, false otherwise
+         */
+        boolean onItemLongClick(StaggeredGridView parent, View view, int position, long id);
+    }
+
+    /**
      * Maps a point to a position in the list.
-     *
+     * 
      * @param x X in local coordinate
      * @param y Y in local coordinate
      * @return The position of the item which contains the specified point, or
-     *         {@link #INVALID_POSITION} if the point does not intersect an item.
+     *         {@link #INVALID_POSITION} if the point does not intersect an
+     *         item.
      */
     public int pointToPosition(int x, int y) {
         Rect frame = mTouchFrame;
@@ -2389,14 +2456,39 @@ public class StaggeredGridView extends ViewGroup
         }
         return INVALID_POSITION;
     }
-    
+
+    private class CheckForLongPress extends WindowRunnnable implements Runnable {
+        public void run() {
+            final int motionPosition = mMotionPosition;
+            final View child = getChildAt(motionPosition - mFirstPosition);
+            if (child != null) {
+                final int longPressPosition = mMotionPosition;
+                final long longPressId = mAdapter.getItemId(mMotionPosition);
+
+                boolean handled = false;
+                if (sameWindow() && !mDataChanged) {
+                    handled = performLongPress(child, longPressPosition, longPressId);
+                }
+                if (handled) {
+                    mTouchMode = TOUCH_MODE_REST;
+                    setPressed(false);
+                    child.setPressed(false);
+                } else {
+                    mTouchMode = TOUCH_MODE_DONE_WAITING;
+                }
+            }
+        }
+    }
+
     private class PerformClick extends WindowRunnnable implements Runnable {
         int mClickMotionPosition;
 
         public void run() {
-            // The data has changed since we posted this action in the event queue,
+            // The data has changed since we posted this action in the event
+            // queue,
             // bail out before bad things happen
-            if (mDataChanged) return;
+            if (mDataChanged)
+                return;
 
             final ListAdapter adapter = mAdapter;
             final int motionPosition = mClickMotionPosition;
@@ -2404,7 +2496,8 @@ public class StaggeredGridView extends ViewGroup
                     motionPosition != INVALID_POSITION &&
                     motionPosition < adapter.getCount() && sameWindow()) {
                 final View view = getChildAt(motionPosition - mFirstPosition);
-                // If there is no view, something bad happened (the view scrolled off the
+                // If there is no view, something bad happened (the view
+                // scrolled off the
                 // screen, etc.) and we should cancel the click
                 if (view != null) {
                     performItemClick(view, motionPosition, adapter.getItemId(motionPosition));
@@ -2412,7 +2505,7 @@ public class StaggeredGridView extends ViewGroup
             }
         }
     }
-    
+
     public boolean performItemClick(View view, int position, long id) {
         if (mOnItemClickListener != null) {
             playSoundEffect(SoundEffectConstants.CLICK);
@@ -2425,52 +2518,125 @@ public class StaggeredGridView extends ViewGroup
 
         return false;
     }
-    
+
+    boolean performLongPress(final View child,
+            final int longPressPosition, final long longPressId) {
+
+        // TODO : add check for multiple choice mode.. currently modes are yet
+        // to be supported
+
+        boolean handled = false;
+        if (mOnItemLongClickListener != null) {
+            handled = mOnItemLongClickListener.onItemLongClick(this, child, longPressPosition,
+                    longPressId);
+        }
+        if (!handled) {
+            mContextMenuInfo = createContextMenuInfo(child, longPressPosition, longPressId);
+            handled = super.showContextMenuForChild(this);
+        }
+        if (handled) {
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        }
+        return handled;
+    }
+
+    @Override
+    protected ContextMenuInfo getContextMenuInfo() {
+        return mContextMenuInfo;
+    }
+
     /**
-     * Returns the selector {@link android.graphics.drawable.Drawable} that is used to draw the
-     * selection in the list.
-     *
+     * Creates the ContextMenuInfo returned from {@link #getContextMenuInfo()}.
+     * This methods knows the view, position and ID of the item that received
+     * the long press.
+     * 
+     * @param view The view that received the long press.
+     * @param position The position of the item that received the long press.
+     * @param id The ID of the item that received the long press.
+     * @return The extra information that should be returned by
+     *         {@link #getContextMenuInfo()}.
+     */
+    ContextMenuInfo createContextMenuInfo(View view, int position, long id) {
+        return new AdapterContextMenuInfo(view, position, id);
+    }
+
+    /**
+     * Extra menu information provided to the
+     * {@link android.view.View.OnCreateContextMenuListener#onCreateContextMenu(ContextMenu, View, ContextMenuInfo) }
+     * callback when a context menu is brought up for this AdapterView.
+     */
+    public static class AdapterContextMenuInfo implements ContextMenu.ContextMenuInfo {
+
+        public AdapterContextMenuInfo(View targetView, int position, long id) {
+            this.targetView = targetView;
+            this.position = position;
+            this.id = id;
+        }
+
+        /**
+         * The child view for which the context menu is being displayed. This
+         * will be one of the children of this AdapterView.
+         */
+        public View targetView;
+
+        /**
+         * The position in the adapter for which the context menu is being
+         * displayed.
+         */
+        public int position;
+
+        /**
+         * The row id of the item for which the context menu is being displayed.
+         */
+        public long id;
+    }
+
+    /**
+     * Returns the selector {@link android.graphics.drawable.Drawable} that is
+     * used to draw the selection in the list.
+     * 
      * @return the drawable used to display the selector
      */
     public Drawable getSelector() {
         return mSelector;
     }
-    
+
     /**
-     * Set a Drawable that should be used to highlight the currently selected item.
-     *
+     * Set a Drawable that should be used to highlight the currently selected
+     * item.
+     * 
      * @param resID A Drawable resource to use as the selection highlight.
-     *
      * @attr ref android.R.styleable#AbsListView_listSelector
      */
     public void setSelector(int resID) {
         setSelector(getResources().getDrawable(resID));
     }
-    
+
     @Override
     public boolean verifyDrawable(Drawable dr) {
         return mSelector == dr || super.verifyDrawable(dr);
     }
 
     @TargetApi(Build.VERSION_CODES.HONEYCOMB)
-	@Override
+    @Override
     public void jumpDrawablesToCurrentState() {
         super.jumpDrawablesToCurrentState();
-        if (mSelector != null) mSelector.jumpToCurrentState();
+        if (mSelector != null)
+            mSelector.jumpToCurrentState();
     }
-    
+
     public void setSelector(Drawable sel) {
         if (mSelector != null) {
             mSelector.setCallback(null);
             unscheduleDrawable(mSelector);
         }
-        
+
         mSelector = sel;
-        
-        if(mSelector==null){
-        	return;
+
+        if (mSelector == null) {
+            return;
         }
-         
+
         Rect padding = new Rect();
         sel.getPadding(padding);
         mSelectionLeftPadding = padding.left;
@@ -2480,58 +2646,60 @@ public class StaggeredGridView extends ViewGroup
         sel.setCallback(this);
         updateSelectorState();
     }
-    
+
     void updateSelectorState() {
         if (mSelector != null) {
             if (shouldShowSelector()) {
                 mSelector.setState(getDrawableState());
             } else {
-                mSelector.setState(new int[] { 0 });
+                mSelector.setState(new int[] {
+                    0
+                });
             }
         }
     }
-    
+
     @Override
     protected void drawableStateChanged() {
         super.drawableStateChanged();
         updateSelectorState();
     }
-    
+
     /**
-     * Indicates whether this view is in a state where the selector should be drawn. This will
-     * happen if we have focus but are not in touch mode, or we are in the middle of displaying
-     * the pressed state for an item.
-     *
+     * Indicates whether this view is in a state where the selector should be
+     * drawn. This will happen if we have focus but are not in touch mode, or we
+     * are in the middle of displaying the pressed state for an item.
+     * 
      * @return True if the selector should be shown
      */
     boolean shouldShowSelector() {
         return (hasFocus() && !isInTouchMode()) || touchModeDrawsInPressedState();
     }
-    
+
     /**
-     * @return True if the current touch mode requires that we draw the selector in the pressed
-     *         state.
+     * @return True if the current touch mode requires that we draw the selector
+     *         in the pressed state.
      */
     boolean touchModeDrawsInPressedState() {
         // FIXME use isPressed for this
         switch (mTouchMode) {
-        case TOUCH_MODE_TAP:
-        case TOUCH_MODE_DONE_WAITING:
-            return true;
-        default:
-            return false;
+            case TOUCH_MODE_TAP:
+            case TOUCH_MODE_DONE_WAITING:
+                return true;
+            default:
+                return false;
         }
     }
-    
+
     private void useDefaultSelector() {
         setSelector(getResources().getDrawable(android.R.drawable.list_selector_background));
     }
-    
+
     private void positionSelector(int l, int t, int r, int b) {
         mSelectorRect.set(l - mSelectionLeftPadding, t - mSelectionTopPadding, r
                 + mSelectionRightPadding, b + mSelectionBottomPadding);
     }
-    
+
     void positionSelector(int position, View sel) {
         if (position != INVALID_POSITION) {
             mSelectorPosition = position;
@@ -2540,9 +2708,9 @@ public class StaggeredGridView extends ViewGroup
         final Rect selectorRect = mSelectorRect;
         selectorRect.set(sel.getLeft(), sel.getTop(), sel.getRight(), sel.getBottom());
         if (sel instanceof SelectionBoundsAdjuster) {
-            ((SelectionBoundsAdjuster)sel).adjustListItemSelectionBounds(selectorRect);
+            ((SelectionBoundsAdjuster) sel).adjustListItemSelectionBounds(selectorRect);
         }
-        
+
         positionSelector(selectorRect.left, selectorRect.top, selectorRect.right,
                 selectorRect.bottom);
 
@@ -2554,28 +2722,28 @@ public class StaggeredGridView extends ViewGroup
             }
         }
     }
-    
-	/**
+
+    /**
      * The top-level view of a list item can implement this interface to allow
      * itself to modify the bounds of the selection shown for that item.
      */
     public interface SelectionBoundsAdjuster {
         /**
-         * Called to allow the list item to adjust the bounds shown for
-         * its selection.
-         *
-         * @param bounds On call, this contains the bounds the list has
-         * selected for the item (that is the bounds of the entire view).  The
-         * values can be modified as desired.
+         * Called to allow the list item to adjust the bounds shown for its
+         * selection.
+         * 
+         * @param bounds On call, this contains the bounds the list has selected
+         *            for the item (that is the bounds of the entire view). The
+         *            values can be modified as desired.
          */
         public void adjustListItemSelectionBounds(Rect bounds);
     }
-    
-    private int getSelectedItemPosition(){
-    	// TODO: setup mNextSelectedPosition
-    	return this.mSelectorPosition;
+
+    private int getSelectedItemPosition() {
+        // TODO: setup mNextSelectedPosition
+        return this.mSelectorPosition;
     }
-    
+
     void hideSelector() {
         if (this.mSelectorPosition != INVALID_POSITION) {
             // TODO: hide selector properly
